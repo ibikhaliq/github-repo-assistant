@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <meta
+        name="description"
+        content="AI-powered GitHub repository analysis and question answering."
+    >
+
+    <title>Repository Intelligence Assistant</title>
+
+    <link
+        rel="stylesheet"
+        href="/static/styles.css"
+    >
+</head>
+
+<body>
+
+    <!-- Top navigation -->
+    <header class="site-header">
+        <div class="header-content">
+            <a
+                href="/"
+                class="brand"
+                aria-label="Repository Intelligence Assistant home"
+            >
+                <span class="brand-mark" aria-hidden="true">
+                    &lt;/&gt;
+                </span>
+
+                <span class="brand-text">
+                    Repository Intelligence
+                </span>
+            </a>
+
+            <span class="header-label">
+                AI Code Analysis
+            </span>
+        </div>
+    </header>
+
+
+    <main class="page-container">
+
+        <!-- Hero section -->
+        <section class="hero-section">
+            <p class="eyebrow">
+                AI-powered developer tool
+            </p>
+
+            <h1>
+                Understand any GitHub repository faster.
+            </h1>
+
+            <p class="hero-description">
+                Analyze architecture, technologies, data flow,
+                strengths, potential issues, and ask grounded
+                questions about the codebase.
+            </p>
+        </section>
+
+
+        <!-- Repository input -->
+        <section class="card repository-section">
+            <div class="repository-form-heading">
+                <div>
+                    <p class="eyebrow">
+                        Get started
+                    </p>
+
+                    <h2>
+                        Analyze a repository
+                    </h2>
+
+                    <p class="section-description">
+                        Enter the URL of a public GitHub repository.
+                    </p>
+                </div>
+            </div>
+
+            <form id="repositoryForm">
+                <label for="repositoryUrl">
+                    GitHub repository URL
+                </label>
+
+                <div class="input-row">
+                    <input
+                        type="url"
+                        id="repositoryUrl"
+                        name="repositoryUrl"
+                        placeholder="https://github.com/owner/repository"
+                        autocomplete="url"
+                        required
+                    >
+
+                    <button
+                        type="submit"
+                        class="primary-button"
+                    >
+                        Analyze Repository
+                    </button>
+                </div>
+            </form>
+
+            <div
+                id="repositoryStatus"
+                class="status-message"
+                role="status"
+                aria-live="polite"
+            ></div>
+        </section>
+
+
+        <!-- Hidden until repository is indexed -->
+        <section
+            id="repositoryWorkspace"
+            class="workspace hidden"
+        >
+
+            <!-- Repository identity and status -->
+            <section class="repository-header-card card">
+                <div class="section-heading-row">
+                    <div>
+                        <p class="eyebrow">
+                            Active repository
+                        </p>
+
+                        <h2 id="repositoryName">
+                            Repository name
+                        </h2>
+
+                        <p class="repository-subtitle">
+                            Repository analysis is complete and ready
+                            for question answering.
+                        </p>
+                    </div>
+
+                    <span
+                        id="repositoryState"
+                        class="status-badge"
+                    >
+                        Ready
+                    </span>
+                </div>
+            </section>
+
+
+            <!-- Repository metrics -->
+            <section class="stats-grid">
+                <article class="stat-card">
+                    <p class="stat-label">
+                        Analysis
+                    </p>
+
+                    <p class="stat-value">
+                        Complete
+                    </p>
+
+                    <p class="stat-description">
+                        Repository files processed
+                    </p>
+                </article>
+
+                <article class="stat-card">
+                    <p class="stat-label">
+                        Retrieval
+                    </p>
+
+                    <p class="stat-value">
+                        Hybrid
+                    </p>
+
+                    <p class="stat-description">
+                        Keyword and semantic search
+                    </p>
+                </article>
+
+                <article class="stat-card">
+                    <p class="stat-label">
+                        Grounding
+                    </p>
+
+                    <p class="stat-value">
+                        Enabled
+                    </p>
+
+                    <p class="stat-description">
+                        Answers linked to relevant files
+                    </p>
+                </article>
+
+                <article class="stat-card">
+                    <p class="stat-label">
+                        Status
+                    </p>
+
+                    <p class="stat-value">
+                        Ready
+                    </p>
+
+                    <p class="stat-description">
+                        Ask questions about the repository
+                    </p>
+                </article>
+            </section>
+
+
+            <!-- Main workspace -->
+            <section class="workspace-grid">
+
+                <!-- Repository overview -->
+                <section class="card repository-overview">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">
+                                Repository intelligence
+                            </p>
+
+                            <h2>
+                                Repository Overview
+                            </h2>
+                        </div>
+                    </div>
+
+                    <div
+                        id="repositorySummary"
+                        class="repository-summary"
+                    >
+                        The repository summary will appear here.
+                    </div>
+                </section>
+
+
+                <!-- Question panel -->
+                <aside class="card question-panel">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="eyebrow">
+                                Ask the codebase
+                            </p>
+
+                            <h2>
+                                Ask a Question
+                            </h2>
+                        </div>
+                    </div>
+
+                    <form id="questionForm">
+                        <label for="questionInput">
+                            What would you like to know?
+                        </label>
+
+                        <textarea
+                            id="questionInput"
+                            name="question"
+                            rows="6"
+                            placeholder="For example: How does authentication work?"
+                            required
+                        ></textarea>
+
+                        <p class="form-hint">
+                            Ask about architecture, dependencies,
+                            data flow, APIs, features, or potential issues.
+                        </p>
+
+                        <button
+                            type="submit"
+                            class="primary-button full-width-button"
+                        >
+                            Ask Repository
+                        </button>
+                    </form>
+                </aside>
+
+            </section>
+
+
+            <!-- Answer area -->
+            <section class="card answer-panel">
+                <div class="section-heading-row answer-heading">
+                    <div>
+                        <p class="eyebrow">
+                            Grounded response
+                        </p>
+
+                        <h2>
+                            Answer
+                        </h2>
+                    </div>
+
+                   <div
+                        id="evidenceStrength"
+                        class="evidence-strength hidden"
+                    >
+                    <span class="evidence-label">
+                        Evidence Strength
+                    </span>
+
+                <span
+                    id="confidenceBadge"
+                    class="confidence-badge"
+                ></span>
+
+                <p
+                id="evidenceReason"
+                class="evidence-reason"
+                ></p>
+                </div>
+                </div>
+
+                <div
+                    id="answerContent"
+                    class="answer-content empty-state"
+                    aria-live="polite"
+                >
+                    Ask a question to receive an answer.
+                </div>
+
+                <div
+                    id="relevantFilesSection"
+                    class="relevant-files hidden"
+                >
+                    <div class="relevant-files-heading">
+                        <h3>
+                            Relevant Files
+                        </h3>
+
+                        <p>
+                            These files were used as supporting evidence.
+                        </p>
+                    </div>
+
+                    <ul id="relevantFilesList"></ul>
+                </div>
+            </section>
+
+        </section>
+
+    </main>
+
+
+    <footer class="site-footer">
+        <div class="footer-content">
+            <p>
+                Repository Intelligence Assistant
+            </p>
+
+            <p>
+                Built with FastAPI, GPT-4.1, hybrid retrieval,
+                and vector embeddings.
+            </p>
+        </div>
+    </footer>
+
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

@@ -8,6 +8,8 @@ services:
       - .env
     environment:
       OLLAMA_BASE_URL: http://ollama:11434/v1
+    volumes:
+      - ./repositories:/app/repositories
     depends_on:
       ollama:
         condition: service_healthy

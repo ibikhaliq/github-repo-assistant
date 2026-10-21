@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -6,18 +5,14 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from git.exc import GitCommandError
 from openai import APIError
-import json
-import subprocess
 
-from concurrent.futures import (
-    ThreadPoolExecutor,
-    as_completed,
-)
+from indexing_service import index_repository_service
+
 
 from ai_service import (
     answer_repository_question_with_ai,
     summarize_file_with_ai,
-    summarize_repository_with_ai,
+    
 )
 from github_service import (
     REPOSITORIES_DIR,
@@ -43,13 +38,11 @@ from semantic_retrieval_service import (
 )
 from summary_service import (
     load_repository_summaries,
-    save_repository_summaries,
+    summarize_repository_service,
 )
 from vector_store import (
-    create_repository_embeddings,
     load_repository_embeddings,
-    repository_embeddings_exist,
-    save_repository_embeddings,
+    
 )
 
 from hybrid_retrieval_service import (
@@ -304,269 +297,42 @@ def summarize_repository_file(
         "summary": summary.model_dump(),
     }
 
-def summarize_single_repository_file(
-    repository_path: Path,
-    file_path: Path,
-) -> dict | None:
-    """
-    Read and summarize one repository file.
-
-    Returns None when the file should be skipped.
-    """
-
-    full_path = repository_path / file_path
-
-    if full_path.stat().st_size > MAX_FILE_SIZE_BYTES:
-        return None
-
-    try:
-        file_content = full_path.read_text(
-            encoding="utf-8"
-        )
-    except UnicodeDecodeError:
-        return None
-
-    try:
-        summary = summarize_file_with_ai(
-            file_path=str(file_path),
-            file_content=file_content,
-        )
-    except ValueError:
-        return None
-
-    return {
-        "file_path": str(file_path),
-        "summary": summary.model_dump(),
-    }
 
 @app.post("/repos/{owner}/{repo_name}/summarize")
 def summarize_repository(
     owner: str,
     repo_name: str,
 ):
-    repository_path = (
-        REPOSITORIES_DIR
-    / f"{owner}__{repo_name}"
-    )
+    try:
+        return summarize_repository_service(
+            owner=owner,
+            repo_name=repo_name,
+            repositories_dir=REPOSITORIES_DIR,
+        )
 
-    if not repository_path.exists():
+    except FileNotFoundError as error:
         raise HTTPException(
             status_code=404,
-            detail="Repository has not been cloned.",
-        )
-
-    repository_files = get_repository_files(
-        repository_path
-    )
-
-    file_summaries = []
-    total_files = len(repository_files)
-
-    with ThreadPoolExecutor(
-        max_workers=4
-    ) as executor:
-        future_to_file = {
-            executor.submit(
-                summarize_single_repository_file,
-                repository_path,
-                file_path,
-            ): file_path
-            for file_path in repository_files
-        }
-
-        completed_files = 0
-
-        for future in as_completed(
-            future_to_file
-        ):
-            file_path = future_to_file[future]
-
-            try:
-                file_summary = future.result()
-
-                if file_summary is not None:
-                    file_summaries.append(
-                        file_summary
-                    )
-
-                completed_files += 1
-
-                print(
-                    f"Processed {completed_files}/"
-                    f"{total_files}: {file_path}"
-                )
-
-            except APIError as error:
-                raise HTTPException(
-                    status_code=502,
-                    detail=(
-                        "The AI request failed while "
-                        f"summarizing {file_path}."
-                    ),
-                ) from error
-
-            except OSError as error:
-                print(
-                    f"Could not read {file_path}: "
-                    f"{error}"
-                )
-
-    if not file_summaries:
-        raise HTTPException(
-            status_code=422,
-            detail="No files could be summarized.",
-        )
-
-    try:
-        repository_summary = (
-            summarize_repository_with_ai(
-                repository_name=(
-                    f"{owner}/{repo_name}"
-                ),
-                file_summaries=file_summaries,
-            )
-        )
+            detail=str(error),
+        ) from error
 
     except APIError as error:
         raise HTTPException(
             status_code=502,
             detail=(
-                "The repository summary "
-                "request failed."
+                "The AI request failed while "
+                "summarizing the repository."
             ),
         ) from error
 
     except ValueError as error:
         raise HTTPException(
-            status_code=502,
+            status_code=422,
             detail=str(error),
         ) from error
 
-    summary_data = {
-        "repository": f"{owner}/{repo_name}",
-        "generated_at": (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        ),
-        "files_analyzed": len(
-            file_summaries
-        ),
-        "file_summaries": file_summaries,
-        "repository_summary": (
-            repository_summary.model_dump()
-        ),
-    }
-
-    summary_file_path = (
-        save_repository_summaries(
-            repository_path=repository_path,
-            summary_data=summary_data,
-        )
-    )
-
-    return {
-        **summary_data,
-        "saved_to": str(
-            summary_file_path
-        ),
-    }
-
-def get_current_commit_hash(
-    repository_path: Path,
-) -> str:
-    """
-    Return the current Git commit hash for a repository.
-    """
-    try:
-        result = subprocess.run(
-            [
-                "git",
-                "-C",
-                str(repository_path),
-                "rev-parse",
-                "HEAD",
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-    except subprocess.CalledProcessError as error:
-        raise RuntimeError(
-            "Could not determine the repository commit hash."
-        ) from error
-
-    commit_hash = result.stdout.strip()
-
-    if not commit_hash:
-        raise RuntimeError(
-            "Git returned an empty commit hash."
-        )
-
-    return commit_hash
 
 
-def get_index_metadata_path(
-    repository_path: Path,
-) -> Path:
-    return (
-        repository_path
-        / ".repo_assistant"
-        / "index_metadata.json"
-    )
-
-
-def load_index_metadata(
-    repository_path: Path,
-) -> dict:
-    metadata_path = get_index_metadata_path(
-        repository_path
-    )
-
-    if not metadata_path.exists():
-        return {}
-
-    try:
-        return json.loads(
-            metadata_path.read_text(
-                encoding="utf-8"
-            )
-        )
-    except json.JSONDecodeError:
-        return {}
-
-
-def save_index_metadata(
-    repository_path: Path,
-    repository_name: str,
-    commit_hash: str,
-) -> Path:
-    metadata_path = get_index_metadata_path(
-        repository_path
-    )
-
-    metadata_path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    metadata = {
-        "repository": repository_name,
-        "commit_hash": commit_hash,
-        "indexed_at": datetime.now(
-            timezone.utc
-        ).isoformat(),
-    }
-
-    metadata_path.write_text(
-        json.dumps(
-            metadata,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    return metadata_path
 
 @app.post("/repos/{owner}/{repo_name}/index")
 def index_repository(
@@ -574,244 +340,41 @@ def index_repository(
     repo_name: str,
     force: bool = False,
 ):
-    """
-    Index a repository or reuse its saved index when the
-    repository has not changed.
-    """
+    try:
+        return index_repository_service(
+            owner=owner,
+            repo_name=repo_name,
+            repositories_dir=REPOSITORIES_DIR,
+            force=force,
+        )
 
-    repository_name = f"{owner}/{repo_name}"
-
-    repository_path = (
-        REPOSITORIES_DIR / f"{owner}__{repo_name}"
-    )
-
-    if not repository_path.exists():
+    except FileNotFoundError as error:
         raise HTTPException(
             status_code=404,
-            detail="Repository not found. Clone it first.",
-        )
+            detail=str(error),
+        ) from error
 
-    # ----------------------------------
-    # Step 1: Read current commit hash
-    # ----------------------------------
-    try:
-        current_commit_hash = (
-            get_current_commit_hash(
-                repository_path
-            )
-        )
-    except RuntimeError as error:
+    except APIError as error:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "An AI request failed while "
+                "indexing the repository."
+            ),
+        ) from error
+
+    except ValueError as error:
         raise HTTPException(
             status_code=500,
             detail=str(error),
         ) from error
 
-    summaries_file_path = (
-        repository_path
-        / ".repo_assistant"
-        / "summaries.json"
-    )
-
-    embeddings_file_path = (
-        repository_path
-        / ".repo_assistant"
-        / "embeddings.json"
-    )
-
-    metadata = load_index_metadata(
-        repository_path
-    )
-
-    saved_commit_hash = metadata.get(
-        "commit_hash"
-    )
-
-    cache_is_valid = (
-        not force
-        and saved_commit_hash
-        == current_commit_hash
-        and summaries_file_path.exists()
-        and embeddings_file_path.exists()
-    )
-
-    # ----------------------------------
-    # Step 2: Return cached index
-    # ----------------------------------
-    
-    print("\n----- Cache Debug -----")
-    print("Current commit:", current_commit_hash)
-    print("Saved commit:  ", saved_commit_hash)
-    print("Summaries exist:", summaries_file_path.exists())
-    print("Embeddings exist:", embeddings_file_path.exists())
-    print("Cache valid:", cache_is_valid)
-    print("-----------------------\n")
-    
-    if cache_is_valid:
-        try:
-            repository_data = (
-                load_repository_summaries(
-                    repository_path
-                )
-            )
-
-            embedding_data = (
-                load_repository_embeddings(
-                    repository_path
-                )
-            )
-        except (
-            FileNotFoundError,
-            ValueError,
-        ) as error:
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "The repository cache exists but "
-                    "could not be loaded."
-                ),
-            ) from error
-
-        return {
-            "status": "success",
-            "source": "cache",
-            "repository": repository_name,
-            "commit_hash": current_commit_hash,
-            "files_analyzed": len(
-                repository_data.get(
-                    "file_summaries",
-                    [],
-                )
-            ),
-            "files_embedded": embedding_data.get(
-                "files_embedded",
-                0,
-            ),
-            "embedding_dimensions": (
-                embedding_data.get(
-                    "embedding_dimensions",
-                    0,
-                )
-            ),
-            "summary_file": str(
-                summaries_file_path
-            ),
-            "embeddings_file": str(
-                embeddings_file_path
-            ),
-            "message": (
-                "The repository has not changed. "
-                "The saved index was reused."
-            ),
-        }
-
-    # ----------------------------------
-    # Step 3: Summarize repository
-    # ----------------------------------
-    print("Generating new summaries...")
-    
-    summary_data = summarize_repository(
-        owner=owner,
-        repo_name=repo_name,
-    )
-
-    try:
-        repository_data = (
-            load_repository_summaries(
-                repository_path
-            )
-        )
-    except FileNotFoundError as error:
+    except RuntimeError as error:
         raise HTTPException(
             status_code=500,
-            detail=(
-                "Repository summaries could not "
-                "be loaded."
-            ),
+            detail=str(error),
         ) from error
-
-    # ----------------------------------
-    # Step 4: Generate embeddings
-    # ----------------------------------
-    try:
-        embedding_records = (
-            create_repository_embeddings(
-                repository_data=repository_data,
-            )
-        )
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Repository summaries were created, "
-                "but embedding generation failed."
-            ),
-        ) from error
-
-    # ----------------------------------
-    # Step 5: Save embeddings
-    # ----------------------------------
-    try:
-        embeddings_file_path = (
-            save_repository_embeddings(
-                repository_path=repository_path,
-                repository_name=repository_name,
-                embedding_records=embedding_records,
-            )
-        )
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                "Embeddings were generated but "
-                "could not be saved."
-            ),
-        ) from error
-
-    # Only save the commit hash after the
-    # full indexing process succeeds.
-    metadata_path = save_index_metadata(
-        repository_path=repository_path,
-        repository_name=repository_name,
-        commit_hash=current_commit_hash,
-    )
-
-    # ----------------------------------
-    # Step 6: Return new index results
-    # ----------------------------------
-    return {
-        "status": "success",
-        "source": "generated",
-        "repository": repository_name,
-        "commit_hash": current_commit_hash,
-        "files_analyzed": summary_data[
-            "files_analyzed"
-        ],
-        "files_embedded": len(
-            embedding_records
-        ),
-        "embedding_dimensions": (
-            len(
-                embedding_records[0]["embedding"]
-            )
-            if embedding_records
-            else 0
-        ),
-        "summary_file": summary_data[
-            "saved_to"
-        ],
-        "embeddings_file": str(
-            embeddings_file_path
-        ),
-        "metadata_file": str(
-            metadata_path
-        ),
-        "message": (
-            "Repository indexed successfully. "
-            "It is now ready for semantic search "
-            "and question answering."
-        ),
-    }
-
+    
 @app.get("/repos/{owner}/{repo_name}/summary")
 def get_saved_repository_summary(
     owner: str,

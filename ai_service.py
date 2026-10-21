@@ -19,28 +19,23 @@ from prompts import (
 
 load_dotenv()
 
-SPIDERAI_API_KEY = os.getenv("SPIDERAI_API_KEY")
-SPIDERAI_BASE_URL = os.getenv(
-    "SPIDERAI_BASE_URL",
-    "https://spideraiapi.richmond.edu/v1",
-)
-SPIDERAI_MODEL = os.getenv("SPIDERAI_MODEL", "gpt-4.1")
-SPIDERAI_EMBEDDING_MODEL = os.getenv(
-    "SPIDERAI_EMBEDDING_MODEL",
-    "text-embedding-3-small",
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+OPENAI_MODEL = os.getenv(
+    "OPENAI_MODEL",
+    "gpt-6-luna",
 )
 
 
-if not SPIDERAI_API_KEY:
+if not OPENAI_API_KEY:
     raise RuntimeError(
-        "SPIDERAI_API_KEY was not found. "
-        "Add it to the backend/.env file."
+        "OPENAI_API_KEY was not found. "
+        "Add it to the .env file."
     )
 
 
 client = OpenAI(
-    api_key=SPIDERAI_API_KEY,
-    base_url=SPIDERAI_BASE_URL,
+    api_key=OPENAI_API_KEY,
 )
 
 def get_response_text(response) -> str:
@@ -80,7 +75,7 @@ def summarize_file_with_ai(
     )
 
     response = client.responses.create(
-        model=SPIDERAI_MODEL,
+        model=OPENAI_MODEL,
         input=prompt,
     )
 
@@ -109,7 +104,7 @@ def summarize_repository_with_ai(
     )
 
     response = client.responses.create(
-        model=SPIDERAI_MODEL,
+        model=OPENAI_MODEL,
         input=prompt,
     )
 
@@ -145,7 +140,7 @@ def answer_repository_question_with_ai(
     )
 
     response = client.responses.create(
-        model=SPIDERAI_MODEL,
+        model=OPENAI_MODEL,
         input=prompt,
     )
 

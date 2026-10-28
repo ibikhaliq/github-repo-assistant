@@ -8,6 +8,12 @@ from openai import APIError
 
 from indexing_service import index_repository_service
 
+from rq.job import Job
+
+from queue_service import (
+    index_queue,
+    redis_connection,
+)
 
 from ai_service import (
     answer_repository_question_with_ai,
@@ -331,7 +337,31 @@ def summarize_repository(
             detail=str(error),
         ) from error
 
+@app.get("/jobs/{job_id}")
+def get_job_status(job_id: str):
+    try:
+        job = Job.fetch(
+            job_id,
+            connection=redis_connection,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=404,
+            detail="Job not found.",
+        ) from error
 
+    response = {
+        "job_id": job.id,
+        "status": job.get_status().value,
+    }
+
+    if job.is_finished:
+        response["result"] = job.result
+
+    if job.is_failed:
+        response["error"] = job.exc_info
+
+    return response
 
 
 @app.post("/repos/{owner}/{repo_name}/index")
@@ -340,40 +370,29 @@ def index_repository(
     repo_name: str,
     force: bool = False,
 ):
-    try:
-        return index_repository_service(
-            owner=owner,
-            repo_name=repo_name,
-            repositories_dir=REPOSITORIES_DIR,
-            force=force,
-        )
+    repository_path = (
+        REPOSITORIES_DIR / f"{owner}__{repo_name}"
+    )
 
-    except FileNotFoundError as error:
+    if not repository_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=str(error),
-        ) from error
+            detail="Repository not found. Clone it first.",
+        )
 
-    except APIError as error:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "An AI request failed while "
-                "indexing the repository."
-            ),
-        ) from error
+    job = index_queue.enqueue(
+        index_repository_service,
+        owner=owner,
+        repo_name=repo_name,
+        repositories_dir=REPOSITORIES_DIR,
+        force=force,
+    )
 
-    except ValueError as error:
-        raise HTTPException(
-            status_code=500,
-            detail=str(error),
-        ) from error
-
-    except RuntimeError as error:
-        raise HTTPException(
-            status_code=500,
-            detail=str(error),
-        ) from error
+    return {
+        "status": "queued",
+        "job_id": job.id,
+        "repository": f"{owner}/{repo_name}",
+    }
     
 @app.get("/repos/{owner}/{repo_name}/summary")
 def get_saved_repository_summary(

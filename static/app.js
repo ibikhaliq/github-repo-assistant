@@ -155,12 +155,19 @@ repositoryForm.addEventListener(
             response = await fetch(
                 `/repos/${currentOwner}/${currentRepoName}/index`,
                 {
-                    method: "POST",
+                method: "POST",
                 }
             );
 
             data = await getResponseData(
                 response
+            );
+
+            repositoryStatus.textContent =
+            "Indexing repository...";
+
+            await waitForJob(
+            data.job_id
             );
 
             //----------------------------------
@@ -534,6 +541,32 @@ function displayAnswer(data) {
     else {
         relevantFilesSection.classList.add(
             "hidden"
+        );
+    }
+}
+async function waitForJob(jobId) {
+    while (true) {
+        const response = await fetch(
+            `/jobs/${jobId}`
+        );
+
+        const data = await getResponseData(
+            response
+        );
+
+        if (data.status === "finished") {
+            return data.result;
+        }
+
+        if (data.status === "failed") {
+            throw new Error(
+                data.error ||
+                "Repository indexing failed."
+            );
+        }
+
+        await new Promise(
+            resolve => setTimeout(resolve, 1000)
         );
     }
 }

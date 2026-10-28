@@ -8,11 +8,35 @@ services:
       - .env
     environment:
       OLLAMA_BASE_URL: http://ollama:11434/v1
+      REDIS_URL: redis://redis:6379/0
     volumes:
       - ./repositories:/app/repositories
     depends_on:
+      redis:
+        condition: service_started
       ollama:
         condition: service_healthy
+
+  worker:
+    build: .
+    command: rq worker indexing
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://ollama:11434/v1
+    volumes:
+      - ./repositories:/app/repositories
+    depends_on:
+      redis:
+        condition: service_started
+      ollama:
+        condition: service_healthy
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
 
   ollama:
     image: ollama/ollama:latest
